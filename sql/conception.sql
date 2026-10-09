@@ -26,6 +26,7 @@ CREATE TABLE users(
    password VARCHAR(255)  NOT NULL,
    is_active BOOLEAN NOT NULL,
    created_at TIMESTAMP DEFAULT NOW(),
+   UNIQUE(username, email),
    PRIMARY KEY(id)
 );
 
