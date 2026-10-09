@@ -1,0 +1,199 @@
+CREATE TABLE organizations(
+   id SERIAL,
+   name VARCHAR(50) ,
+   organization_type VARCHAR(50)  NOT NULL,
+   address VARCHAR(50) ,
+   is_active BOOLEAN,
+   created_at TIMESTAMP,
+   phone VARCHAR(50) ,
+   PRIMARY KEY(id)
+);
+
+CREATE TABLE users(
+   id SERIAL,
+   username VARCHAR(50)  NOT NULL,
+   email VARCHAR(50) ,
+   password VARCHAR(50)  NOT NULL,
+   is_active BOOLEAN NOT NULL,
+   created_at TIMESTAMP,
+   PRIMARY KEY(id)
+);
+
+CREATE TABLE organization_members(
+   id SERIAL,
+   role VARCHAR(50)  NOT NULL,
+   joined_at TIMESTAMP,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   FOREIGN KEY(id_1) REFERENCES users(id),
+   FOREIGN KEY(id_2) REFERENCES organizations(id)
+);
+
+CREATE TABLE locations(
+   id SERIAL,
+   name VARCHAR(50)  NOT NULL,
+   location_type VARCHAR(50) ,
+   latitude NUMERIC(9,6)  ,
+   longitude NUMERIC(9,6)  ,
+   PRIMARY KEY(id)
+);
+
+CREATE TABLE farms(
+   id SERIAL,
+   farm_code VARCHAR(50) ,
+   name VARCHAR(50) ,
+   area_hectares NUMERIC(15,2)  ,
+   created_at TIMESTAMP,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   UNIQUE(farm_code),
+   FOREIGN KEY(id_1) REFERENCES organizations(id),
+   FOREIGN KEY(id_2) REFERENCES locations(id)
+);
+
+CREATE TABLE lots(
+   id SERIAL,
+   lot_code VARCHAR(50) ,
+   lot_type VARCHAR(50)  NOT NULL,
+   product_state VARCHAR(50) ,
+   quantity_kg NUMERIC(15,2)  ,
+   unit VARCHAR(50) ,
+   status VARCHAR(50) ,
+   created_at TIMESTAMP,
+   updated_at TIMESTAMP,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   UNIQUE(lot_code),
+   FOREIGN KEY(id_1) REFERENCES locations(id),
+   FOREIGN KEY(id_2) REFERENCES organizations(id)
+);
+
+CREATE TABLE lot_lineage(
+   id SERIAL,
+   quantity_contributed_kg NUMERIC(15,2)  ,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   FOREIGN KEY(id_1) REFERENCES lots(id),
+   FOREIGN KEY(id_2) REFERENCES lots(id)
+);
+
+CREATE TABLE processing_records(
+   id SERIAL,
+   process_type VARCHAR(50)  NOT NULL,
+   start_date TIMESTAMP,
+   end_date TIMESTAMP,
+   input_quantity_kg NUMERIC(15,2)   NOT NULL,
+   output_quantity_kg NUMERIC(15,2)  ,
+   loss_quantity_kg NUMERIC(15,2)  ,
+   notes TEXT,
+   PRIMARY KEY(id)
+);
+
+CREATE TABLE quality_checks(
+   id SERIAL,
+   checked_at TIMESTAMP,
+   moisture_percentage NUMERIC(15,2)  ,
+   grade VARCHAR(50) ,
+   result_ VARCHAR(50)  NOT NULL,
+   comments TEXT,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   FOREIGN KEY(id_1) REFERENCES users(id),
+   FOREIGN KEY(id_2) REFERENCES lots(id)
+);
+
+CREATE TABLE shipment(
+   id SERIAL,
+   shipment_code VARCHAR(50) ,
+   destination_country VARCHAR(50)  NOT NULL,
+   planned_departure TIMESTAMP,
+   actual_departure TIMESTAMP,
+   status VARCHAR(50) ,
+   created_at TIMESTAMP,
+   PRIMARY KEY(id),
+   UNIQUE(shipment_code)
+);
+
+CREATE TABLE shipment_lots(
+   id SERIAL,
+   quantity_kg NUMERIC(15,2)  ,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   FOREIGN KEY(id_1) REFERENCES shipment(id),
+   FOREIGN KEY(id_2) REFERENCES lots(id)
+);
+
+CREATE TABLE qr_codes(
+   id SERIAL,
+   public_token VARCHAR(50) ,
+   created_at TIMESTAMP,
+   revoked_at TIMESTAMP,
+   id_1 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   UNIQUE(public_token),
+   FOREIGN KEY(id_1) REFERENCES lots(id)
+);
+
+CREATE TABLE traceability_events(
+   id SERIAL,
+   event_code VARCHAR(50) ,
+   event_type VARCHAR(50) ,
+   event_date TIMESTAMP,
+   recorded_at TIMESTAMP,
+   description TEXT,
+   status VARCHAR(50) ,
+   validated_at TIMESTAMP,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   id_3 INTEGER NOT NULL,
+   id_4 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   UNIQUE(event_code),
+   FOREIGN KEY(id_1) REFERENCES processing_records(id),
+   FOREIGN KEY(id_2) REFERENCES users(id),
+   FOREIGN KEY(id_3) REFERENCES locations(id),
+   FOREIGN KEY(id_4) REFERENCES users(id)
+);
+
+CREATE TABLE event_lots(
+   id SERIAL,
+   role VARCHAR(50) ,
+   quantitty_kg NUMERIC(15,2)  ,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   FOREIGN KEY(id_1) REFERENCES lots(id),
+   FOREIGN KEY(id_2) REFERENCES traceability_events(id)
+);
+
+CREATE TABLE transfers(
+   id SERIAL,
+   dispatch_date TIMESTAMP,
+   receipt_date TIMESTAMP,
+   status VARCHAR(50) ,
+   id_1 INTEGER NOT NULL,
+   id_2 INTEGER NOT NULL,
+   id_3 INTEGER NOT NULL,
+   id_4 INTEGER NOT NULL,
+   id_5 INTEGER NOT NULL,
+   PRIMARY KEY(id),
+   FOREIGN KEY(id_1) REFERENCES locations(id),
+   FOREIGN KEY(id_2) REFERENCES organizations(id),
+   FOREIGN KEY(id_3) REFERENCES traceability_events(id),
+   FOREIGN KEY(id_4) REFERENCES locations(id),
+   FOREIGN KEY(id_5) REFERENCES organizations(id)
+);
+
+CREATE TABLE exporter(
+   id INTEGER,
+   id_1 INTEGER,
+   PRIMARY KEY(id, id_1),
+   FOREIGN KEY(id) REFERENCES organizations(id),
+   FOREIGN KEY(id_1) REFERENCES shipment(id)
+);
