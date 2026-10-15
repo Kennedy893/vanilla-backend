@@ -1,6 +1,6 @@
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timezone, timedelta
 
-from sqlalchemy import text
+from sqlalchemy import text, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -19,7 +19,7 @@ from app.models import (
     TraceabilityEvent,
     User,
 )
-from app.schemas.lot import LotCreate
+from app.schemas.lot import FarmSummary, LotCreate, LotListFilters, LotListFilters, LotListItem, LotListResponse
 
 # Règles de gestion (à ajuster ici, à un seul endroit)
 HARVEST_ORGANIZATION_TYPES = {OrganizationType.PRODUCER, OrganizationType.COOPERATIVE}
@@ -135,3 +135,130 @@ def create_lot(
 
     db.refresh(lot)
     return lot
+
+# Date de récolte d'un lot = date de son événement de récolte (lien via event_lots).
+# min() + group by => une seule ligne par lot, même si l'historique contient un doublon.
+# Remarque : les événements annulés/rejetés ne sont pas exclus ici ; à affiner si besoin.
+_HARVEST = (
+    select(
+        EventLot.lot_id.label("lot_id"),
+        func.min(TraceabilityEvent.event_date).label("harvest_date"),
+    )
+    .join(TraceabilityEvent, TraceabilityEvent.id == EventLot.event_id)
+    .where(
+        TraceabilityEvent.event_type == EventType.HARVEST,
+        EventLot.role == EventLotRole.OUTPUT,
+    )
+    .group_by(EventLot.lot_id)
+    .subquery("harvest")
+)
+ 
+# Liste blanche des tris autorisés (on n'injecte jamais un nom de colonne venant du client)
+_SORT_COLUMNS = {
+    "harvest_date": _HARVEST.c.harvest_date,
+    "created_at": Lot.created_at,
+    "lot_code": Lot.lot_code,
+    "quantity_kg": Lot.quantity_kg,
+}
+ 
+ 
+def _select_from_lots(*columns):
+    """SELECT <columns> FROM lots JOIN farms LEFT JOIN harvest."""
+    return (
+        select(*columns)
+        .select_from(Lot)
+        .join(Farm, Farm.id == Lot.farm_id)
+        .outerjoin(_HARVEST, _HARVEST.c.lot_id == Lot.id)
+    )
+ 
+ 
+def _escape_like(value: str) -> str:
+    """Neutralise % et _ pour qu'une recherche utilisateur soit littérale."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+ 
+ 
+def _base_conditions(organization: Organization, f: LotListFilters) -> list:
+    """Conditions communes, SANS le statut (utile pour les compteurs des onglets)."""
+    # holder_id vient de l'organisation active validée côté serveur, jamais du client
+    conditions = [Lot.holder_id == organization.id]
+    if f.product_state:
+        conditions.append(Lot.product_state == f.product_state)
+    if f.farm_id:
+        conditions.append(Lot.farm_id == f.farm_id)
+    if f.q:
+        conditions.append(Lot.lot_code.ilike(f"%{_escape_like(f.q)}%", escape="\\"))
+    if f.harvest_from:
+        conditions.append(_HARVEST.c.harvest_date >= datetime.combine(f.harvest_from, time.min))
+    if f.harvest_to:  # bornes inclusives : on va jusqu'au lendemain 00:00 exclu
+        conditions.append(
+            _HARVEST.c.harvest_date < datetime.combine(f.harvest_to + timedelta(days=1), time.min)
+        )
+    return conditions
+ 
+ 
+def get_lots(
+    db: Session,
+    organization: Organization,
+    filters: LotListFilters,
+) -> LotListResponse:
+    """Return the lots held by `organization`, filtered, sorted and paginated.
+ 
+    Args:
+        db: The database session.
+        organization: The active organization (already validated by get_org_context).
+        filters: Validated query parameters (filters, sort, pagination).
+ 
+    Returns:
+        A LotListResponse: the page of items, the total count and per-status counts.
+    """
+    base = _base_conditions(organization, filters)
+    with_status = base + ([Lot.status == filters.status] if filters.status else [])
+ 
+    # 1) Total pour la pagination (tous filtres)
+    total = db.scalar(_select_from_lots(func.count(Lot.id)).where(*with_status)) or 0
+ 
+    # 2) Compteurs par statut (tous filtres sauf le statut), zéros inclus
+    status_counts = {status.value: 0 for status in LotStatus}
+    rows = db.execute(
+        _select_from_lots(Lot.status, func.count(Lot.id)).where(*base).group_by(Lot.status)
+    ).all()
+    for status, count in rows:
+        if status is not None:
+            status_counts[status.value] = count
+ 
+    # 3) La page demandée. Lot.id en départage : ordre stable entre deux pages
+    sort_column = _SORT_COLUMNS[filters.sort]
+    primary_order = (
+        sort_column.desc().nulls_last()
+        if filters.order == "desc"
+        else sort_column.asc().nulls_last()
+    )
+    page = db.execute(
+        _select_from_lots(Lot, Farm, _HARVEST.c.harvest_date)
+        .where(*with_status)
+        .order_by(primary_order, Lot.id.desc())
+        .limit(filters.limit)
+        .offset(filters.offset)
+    ).all()
+ 
+    items = [
+        LotListItem(
+            id=lot.id,
+            lot_code=lot.lot_code,
+            product_state=lot.product_state,
+            quantity_kg=lot.quantity_kg,
+            status=lot.status,
+            farm=FarmSummary.model_validate(farm),
+            harvest_date=harvest_date,
+            created_at=lot.created_at,
+        )
+        for lot, farm, harvest_date in page
+    ]
+ 
+    return LotListResponse(
+        items=items,
+        total=total,
+        limit=filters.limit,
+        offset=filters.offset,
+        status_counts=status_counts,
+    )
