@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models import LotStatus, LotType, ProductState
+from app.models import EventLotRole, EventStatus, EventType, LotStatus, LotType, ProductState, QualityResult
 
 
 class LotCreate(BaseModel):
@@ -94,3 +94,29 @@ class LotListFilters(BaseModel):
         if self.harvest_from and self.harvest_to and self.harvest_from > self.harvest_to:
             raise ValueError("La date de début doit précéder la date de fin.")
         return self
+
+class QualityCheckSummary(BaseModel):
+    result: QualityResult
+    grade: str | None
+    moisture_percentage: Decimal | None
+    comments: str | None
+    checked_by: str  # nom d'utilisateur du contrôleur
+ 
+ 
+class LotHistoryEvent(BaseModel):
+    """Une entrée de la chronologie d'un lot."""
+ 
+    event_id: int
+    event_code: str
+    event_type: EventType | None
+    event_date: datetime | None
+    status: EventStatus
+    description: str | None
+    location_name: str
+    organization_name: str | None
+    recorded_by: str  # nom d'utilisateur de l'auteur de la saisie
+    validated_by: str | None
+    validated_at: datetime | None
+    role: EventLotRole | None  # rôle du lot dans l'événement (input, output, transferred)
+    quantity_kg: Decimal | None  # quantité du lot concernée par l'événement
+    quality_check: QualityCheckSummary | None  # rempli seulement pour un contrôle qualité

@@ -108,6 +108,7 @@ class EventLotRole(str, enum.Enum):
     INPUT = "input"
     OUTPUT = "output"
     TRANSFERRED = "transferred"
+    CHECKED = "checked"
 
 
 class TransferStatus(str, enum.Enum):
@@ -250,6 +251,7 @@ class QualityCheck(Base):
     comments: Mapped[str | None] = mapped_column(Text)
     checked_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     lot_id: Mapped[int] = mapped_column(ForeignKey("lots.id"))
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("traceability_events.id"))
 
 
 # --------------------------------------------------------------------------

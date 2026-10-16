@@ -1,7 +1,10 @@
+from typing import List
+
 from app.database import get_db
-from app.schemas.lot import LotCreate, LotListFilters, LotListResponse, LotRead
+from app.schemas.lot import LotCreate, LotHistoryEvent, LotListFilters, LotListResponse, LotRead
 from app.services.dependencies import OrgContext, get_org_context
 from app.services.lots_service import create_lot, get_lots
+from app.services.traceability_service import get_lots_historical
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -64,3 +67,29 @@ def list_lots_endpoint(
         return response
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+@router.get("/{lot_id}/history", response_model=List[LotHistoryEvent])
+def get_lot_history_endpoint(
+    lot_id: int,
+    db: Session = Depends(get_db),
+    ctx: OrgContext = Depends(get_org_context),
+):
+    """
+    Récupère l'historique d'un lot spécifique.
+
+    Args:
+        lot_id: L'identifiant du lot.
+        db: La session de base de données.
+        ctx: Le contexte de l'organisation et de l'utilisateur.
+
+    Returns:
+        Une liste d'événements historiques du lot.
+
+    Raises:
+        HTTPException: Si le lot n'existe pas ou si l'utilisateur n'a pas les droits nécessaires.
+    """
+    try:
+        history = get_lots_historical(db=db, organization=ctx.organization, lot_id=lot_id)
+        return history
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
