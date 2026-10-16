@@ -40,5 +40,7 @@ def login(
         "access_token": access_token,
         "token_type": "bearer",
         "id": user.id,
+        "username": user.username,
         "organization_id": membership.organization_id if membership else None,
+        "organization_role": membership.role if membership else None,
     }
