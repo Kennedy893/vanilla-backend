@@ -2,9 +2,11 @@ from typing import List
 
 from app.database import get_db
 from app.schemas.lot import LotCreate, LotHistoryEvent, LotListFilters, LotListResponse, LotRead
+from app.schemas.transfer import TransferCreate, TransferRead
 from app.services.dependencies import OrgContext, get_org_context
 from app.services.lots_service import LotStateError, create_lot, get_lots, validate_lot
 from app.services.traceability_service import get_lots_historical
+from app.services.transfers_service import transfer_lot
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -123,3 +125,45 @@ def validate_lot_endpoint(
         raise HTTPException(status_code=404, detail=str(e))
     except LotStateError as e:
         raise HTTPException(status_code=409, detail=str(e))
+
+@router.post("/{lot_id}/transfer", response_model=TransferRead)
+def transfer_lot_endpoint(
+    lot_id: int,
+    transfer_data: TransferCreate,
+    db: Session = Depends(get_db),
+    ctx: OrgContext = Depends(get_org_context),
+):
+    """
+    Transfère un lot vers une autre organisation.
+
+    Args:
+        lot_id: L'identifiant du lot à transférer.
+        transfer_data: Les données du transfert.
+        db: La session de base de données.
+        ctx: Le contexte de l'organisation et de l'utilisateur.
+
+    Returns:
+        Le transfert créé (sérialisé avec TransferRead).
+
+    Raises:
+        HTTPException: Si le lot n'existe pas, si l'utilisateur n'a pas les droits nécessaires,
+                       ou si le lot n'est pas dans un état transférable.
+    """
+    try:
+        transfer = transfer_lot(
+            db=db,
+            lot_id=lot_id,
+            data=transfer_data,
+            user=ctx.user,
+            organization=ctx.organization,
+            role=ctx.role,
+        )
+        return transfer
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except LotStateError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
