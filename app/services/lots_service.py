@@ -24,7 +24,8 @@ from app.schemas.lot import FarmSummary, LotCreate, LotListFilters, LotListFilte
 # Règles de gestion (à ajuster ici, à un seul endroit)
 HARVEST_ORGANIZATION_TYPES = {OrganizationType.PRODUCER, OrganizationType.COOPERATIVE}
 WRITE_ROLES = {MemberRole.OPERATOR, MemberRole.MANAGER, MemberRole.OWNER}
-AUTO_VALIDATE_ROLES = {MemberRole.MANAGER, MemberRole.OWNER}
+# AUTO_VALIDATE_ROLES = {MemberRole.MANAGER, MemberRole.OWNER}
+AUTO_VALIDATE_ROLES: set[MemberRole] = set()
 
 
 def _next_sequence_value(db: Session, sequence_name: str) -> int:
@@ -262,3 +263,70 @@ def get_lots(
         offset=filters.offset,
         status_counts=status_counts,
     )
+
+
+VALIDATE_ROLES = {MemberRole.MANAGER, MemberRole.OWNER}
+
+class LotStateError(Exception):
+    """Le lot n'est pas dans un état qui permet cette action (-> 409)."""
+
+def validate_lot(
+    db: Session,
+    lot_id: int,
+    user: User,
+    organization: Organization,
+    role: MemberRole,
+) -> Lot:
+    """Validate a lot's harvest: event PENDING -> VALIDATED and lot CREATED -> AVAILABLE.
+ 
+    Both changes happen in one transaction: both succeed or none does.
+ 
+    Raises:
+        PermissionError: the role cannot validate (-> 403).
+        LookupError: the lot does not exist or is not held by the organization (-> 404).
+        LotStateError: the lot is not waiting for validation (-> 409).
+    """
+    if role not in VALIDATE_ROLES:
+        raise PermissionError("Votre rôle ne permet pas de valider un lot.")
+ 
+    # NB : la ligne du lot est verrouillée jusqu'à la fin de la transaction.
+    # Si deux managers valident en même temps, le second attend, puis voit le statut
+    # déjà passé à AVAILABLE et reçoit l'erreur « pas en attente ».
+    lot = db.scalar(
+        select(Lot)
+        .where(Lot.id == lot_id, Lot.holder_id == organization.id)
+        .with_for_update()
+    )
+    if lot is None:
+        raise LookupError("Lot introuvable.")
+ 
+    if lot.status != LotStatus.CREATED:
+        raise LotStateError("Ce lot n'est pas en attente de validation.")
+ 
+    # L'événement de récolte en attente de ce lot (via event_lots)
+    event = db.scalar(
+        select(TraceabilityEvent)
+        .join(EventLot, EventLot.event_id == TraceabilityEvent.id)
+        .where(
+            EventLot.lot_id == lot.id,
+            EventLot.role == EventLotRole.OUTPUT,
+            TraceabilityEvent.event_type == EventType.HARVEST,
+            TraceabilityEvent.status == EventStatus.PENDING,
+        )
+    )
+    if event is None:
+        # Lot « created » sans récolte en attente : données incohérentes, on ne devine pas
+        raise LotStateError("Aucune récolte en attente de validation pour ce lot.")
+ 
+    try:
+        event.status = EventStatus.VALIDATED
+        event.validated_by_id = user.id
+        event.validated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        lot.status = LotStatus.AVAILABLE  # updated_at est mis à jour automatiquement
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+ 
+    db.refresh(lot)
+    return lot

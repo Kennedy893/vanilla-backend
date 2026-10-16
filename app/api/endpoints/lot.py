@@ -3,7 +3,7 @@ from typing import List
 from app.database import get_db
 from app.schemas.lot import LotCreate, LotHistoryEvent, LotListFilters, LotListResponse, LotRead
 from app.services.dependencies import OrgContext, get_org_context
-from app.services.lots_service import create_lot, get_lots
+from app.services.lots_service import LotStateError, create_lot, get_lots, validate_lot
 from app.services.traceability_service import get_lots_historical
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -93,3 +93,33 @@ def get_lot_history_endpoint(
         return history
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+@router.post("/{lot_id}/validate", response_model=LotRead)
+def validate_lot_endpoint(
+    lot_id: int,
+    db: Session = Depends(get_db),
+    ctx: OrgContext = Depends(get_org_context),
+):
+    """
+    Valide un lot de récolte.
+
+    Args:
+        lot_id: L'identifiant du lot à valider.
+        db: La session de base de données.
+        ctx: Le contexte de l'organisation et de l'utilisateur.
+
+    Returns:
+        Le lot validé (sérialisé avec LotRead).
+
+    Raises:
+        HTTPException: Si le lot n'existe pas ou si l'utilisateur n'a pas les droits nécessaires.
+    """
+    try:
+        lot = validate_lot(db=db, organization=ctx.organization, user=ctx.user, role=ctx.role, lot_id=lot_id)
+        return lot
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except LotStateError as e:
+        raise HTTPException(status_code=409, detail=str(e))
