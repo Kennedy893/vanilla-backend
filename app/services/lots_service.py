@@ -1,5 +1,6 @@
 from datetime import datetime, time, timezone, timedelta
 
+from app.services.lot_rules import ensure_lot_not_archived
 from sqlalchemy import text, func, select
 from sqlalchemy.orm import Session
 
@@ -299,7 +300,7 @@ def validate_lot(
     )
     if lot is None:
         raise LookupError("Lot introuvable.")
- 
+    ensure_lot_not_archived(lot)
     if lot.status != LotStatus.CREATED:
         raise LotStateError("Ce lot n'est pas en attente de validation.")
  

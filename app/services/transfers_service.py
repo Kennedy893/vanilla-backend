@@ -1,5 +1,6 @@
 from datetime import datetime, time, timezone
 
+from app.services.lot_rules import ensure_lot_not_archived
 from app.services.lots_service import generate_event_code
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
@@ -54,6 +55,7 @@ def transfer_lot(
     )
     if lot is None:
         raise LookupError("Lot introuvable.")
+    ensure_lot_not_archived(lot)
     if lot.status != LotStatus.AVAILABLE:
         raise LotStateError("Seul un lot disponible peut être transféré.")
     if lot.quantity_kg <= 0:

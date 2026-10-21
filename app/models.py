@@ -205,7 +205,20 @@ class Farm(Base):
 # --------------------------------------------------------------------------
 class Lot(Base):
     __tablename__ = "lots"
-    __table_args__ = (CheckConstraint("quantity_kg >= 0", name="quantity_positive"),)
+    __table_args__ = (
+        CheckConstraint("quantity_kg >= 0", name="quantity_positive"),
+        # Les trois champs d'archivage vont ensemble : tous vides, ou tous remplis
+        CheckConstraint(
+            "(archived_at IS NULL AND archived_by_id IS NULL AND archive_reason IS NULL) OR "
+            "(archived_at IS NOT NULL AND archived_by_id IS NOT NULL AND archive_reason IS NOT NULL)",
+            name="archive_fields_together",
+        ),
+        # Un lot « archived » a forcément une date d'archivage
+        CheckConstraint(
+            "status <> 'archived' OR archived_at IS NOT NULL",
+            name="archived_requires_date",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     lot_code: Mapped[str] = mapped_column(String(50), unique=True)
@@ -221,6 +234,12 @@ class Lot(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=func.now())
     farm_id: Mapped[int] = mapped_column(ForeignKey("farms.id"))
     holder_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"))
+    # Archivage : renseignés ensemble, uniquement quand le lot passe à « archived »
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime)
+    archived_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    archive_reason: Mapped[str | None] = mapped_column(String(500))
+    # Statut du lot juste avant l'archivage, pour le restaurer à l'identique au désarchivage
+    archived_from_status: Mapped[str | None] = mapped_column(String(30))
 
 
 class LotLineage(Base):

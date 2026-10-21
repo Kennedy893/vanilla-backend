@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.endpoints import auth, farm, location, lot, organization, transfer
+from app.api.endpoints import archive, auth, farm, location, lot, organization, transfer
 
 api_router = APIRouter()
 
@@ -9,3 +9,4 @@ api_router.include_router(farm.router)
 api_router.include_router(location.router)
 api_router.include_router(organization.router)
 api_router.include_router(transfer.router)
+api_router.include_router(archive.router)

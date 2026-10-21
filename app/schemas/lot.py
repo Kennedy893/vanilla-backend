@@ -39,6 +39,10 @@ class LotRead(BaseModel):
     holder_id: int
     created_at: datetime | None
     updated_at: datetime | None
+    archived_at: datetime | None
+    archived_by_id: int | None
+    archive_reason: str | None
+    archived_from_status: str | None
 
 class FarmSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -120,3 +124,16 @@ class LotHistoryEvent(BaseModel):
     role: EventLotRole | None  # rôle du lot dans l'événement (input, output, transferred)
     quantity_kg: Decimal | None  # quantité du lot concernée par l'événement
     quality_check: QualityCheckSummary | None  # rempli seulement pour un contrôle qualité
+
+class LotArchive(BaseModel):
+    """Corps de la requête d'archivage : le motif est obligatoire (audit)."""
+ 
+    reason: str = Field(min_length=3, max_length=500)
+ 
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Le motif d'archivage est obligatoire.")
+        return value
